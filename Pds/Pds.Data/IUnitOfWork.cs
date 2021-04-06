@@ -11,6 +11,7 @@ namespace Pds.Data
         IBrandRepository Brands { get; }
         IClientRepository Clients { get; }
         IBillRepository Bills { get; }
+        ILogRepository Logs { get; }
 
         void Save();
     }
