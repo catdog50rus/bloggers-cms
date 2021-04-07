@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Pds.Api.ActionFilters;
 using Pds.Api.AppStart;
 
 namespace Pds.Api
@@ -25,10 +26,13 @@ namespace Pds.Api
         {
             services.AddCustomAuth0Authentication(Configuration);
             services.AddCustomPdsCorsPolicy(Configuration);
-            services.AddControllers();
+            services.AddControllers(options => options.Filters.Add<ExceptionFilterMiddlewareHelper>());
             services.AddCustomSwagger();
             services.AddCustomSqlContext(Configuration);
             services.AddCustomAutoMapper();
+            
+            services.AddSingleton<IExceptionResponseCreatorsFactory, TestExceptionResponseCreatorsFactory>();
+            services.AddSingleton<ExceptionFilterMiddlewareHelper>();
         }
 
         // Do not delete, this is initialization of DI
