@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,6 +8,7 @@ using NLog;
 using NLog.Config;
 using NLog.Extensions.Logging;
 using NLog.Targets;
+using Pds.Api.Logging.NLogTargets;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Pds.Api.AppStart.Logging
@@ -18,12 +16,12 @@ namespace Pds.Api.AppStart.Logging
     public static class LoggingConfigurationExtensions
     {
         private const string LoggingSectionName = "CustomLogging";
-        
+
         public static IHostBuilder ConfigureCustomLoggingLogic(this IHostBuilder builder)
         {
             return builder.ConfigureLogging(ConfigureLogging);
         }
-        
+
         private static void ConfigureLogging(HostBuilderContext context, ILoggingBuilder builder)
         {
             var configuration = context.Configuration;
@@ -41,25 +39,26 @@ namespace Pds.Api.AppStart.Logging
                 .GetRequiredService<IConfiguration>();
             configuration.GetSection(LoggingSectionName)
                 .Bind(loggingConfiguration);
-            Target.Register<LogService>("LogService");
-            
+            Target.Register<RepositoryLogTarget>(nameof(RepositoryLogTarget));
+
             var logFactory = new LogFactory
             {
-                Configuration = 
+                Configuration =
                     new XmlLoggingConfiguration(loggingConfiguration.NLogConfig),
                 ThrowExceptions = true
             };
-            var logService = logFactory.Configuration.FindTargetByName<LogService>("LogService");
-            logService.SetServiceProvider(provider);
+
+            foreach (var serviceProviderDynamicLink in logFactory.Configuration.AllTargets
+                .OfType<IServiceProviderDynamicLink>()) serviceProviderDynamicLink.SetServiceProvider(provider);
+
             return logFactory;
         }
 
-       
 
         private class LoggingConfiguration
         {
             /// <summary>
-            /// NLog config file path
+            ///     NLog config file path
             /// </summary>
             public string NLogConfig { get; set; }
         }

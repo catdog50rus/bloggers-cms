@@ -1,8 +1,4 @@
-using System;
-using System.IO;
-using System.Reflection;
 using Autofac;
-using Pds.Di;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -10,29 +6,33 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Pds.Api.ActionFilters;
 using Pds.Api.AppStart;
+using Pds.Api.Logging.ExceptionCreators;
+using Pds.Api.Logging.ExceptionCreators.ExceptionCreatorsFactories;
+using Pds.Di;
 
 namespace Pds.Api
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
+        private readonly IHostEnvironment environment;
+
+        public Startup(IConfiguration configuration, IHostEnvironment environment)
         {
+            this.environment = environment;
             Configuration = configuration;
         }
 
         public IConfiguration Configuration { get; }
-        
+
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddCustomAuth0Authentication(Configuration);
             services.AddCustomPdsCorsPolicy(Configuration);
-            services.AddControllers(options => options.Filters.Add<ExceptionFilterMiddlewareHelper>());
+            services.AddControllers(options => options.Filters.Add<CustomResponseExceptionFilter>());
             services.AddCustomSwagger();
             services.AddCustomSqlContext(Configuration);
             services.AddCustomAutoMapper();
-            
-            services.AddSingleton<IExceptionResponseCreatorsFactory, TestExceptionResponseCreatorsFactory>();
-            services.AddSingleton<ExceptionFilterMiddlewareHelper>();
+            services.AddCustomExceptionServices(environment);
         }
 
         // Do not delete, this is initialization of DI
@@ -43,18 +43,15 @@ namespace Pds.Api
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            if (env.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-                app.UseSwagger();
-                app.UseCustomSwaggerUI();
-            }
+            app.UseDeveloperExceptionPage();
+            app.UseSwagger();
+            app.UseCustomSwaggerUI();
 
             app.UseCustomPdsCorsPolicy();
             app.UseHttpsRedirection();
 
             app.UseRouting();
-            
+
             app.UseAuthentication();
             app.UseAuthorization();
 

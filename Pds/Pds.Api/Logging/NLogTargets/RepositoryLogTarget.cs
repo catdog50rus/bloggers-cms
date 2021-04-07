@@ -12,12 +12,18 @@ using Pds.Data;
 using Pds.Data.Entities;
 using static System.DateTime;
 
-namespace Pds.Api.AppStart.Logging
+namespace Pds.Api.Logging.NLogTargets
 {
-    [Target("LogService")]
-    public class LogService : AsyncTaskTarget
+    public interface IServiceProviderDynamicLink
     {
-        private IServiceScope scope;
+        void SetServiceProvider(IServiceProvider serviceProvider);
+    }
+
+    [Target("RepositoryLogTarget")]
+    public class RepositoryLogTarget : AsyncTaskTarget, IServiceProviderDynamicLink
+    {
+        private IServiceScope disposingScope;
+        private IServiceProvider serviceProvider;
         private IUnitOfWork unitOfWork;
 
         [DefaultValue("${message}")] public Layout Message { get; set; } = "${message}";
@@ -37,13 +43,44 @@ namespace Pds.Api.AppStart.Logging
 
         public void SetServiceProvider(IServiceProvider value)
         {
-            scope = value.CreateScope();
-            unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            serviceProvider = value;
+        }
+
+        protected override void InitializeTarget()
+        {
+            base.InitializeTarget();
+            CreateScopeIfNull();
+        }
+
+        private void CreateScopeIfNull()
+        {
+            if (serviceProvider is null || disposingScope is not null) return;
+            disposingScope = serviceProvider.CreateScope();
+            unitOfWork = disposingScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         }
 
         protected override async Task WriteAsyncTask(LogEventInfo logEvent, CancellationToken cancellationToken)
         {
+            CreateScopeIfNull();
             await unitOfWork.Logs.InsertAsync(
+                new LogRecord
+                {
+                    Message = Message.Render(logEvent),
+                    Exception = Exception.Render(logEvent),
+                    CallSite = CallSite.Render(logEvent),
+                    Logger = Logger.Render(logEvent),
+                    Level = Level.Render(logEvent),
+                    CreatedAt = TryParse(Time.Render(logEvent), out var created)
+                        ? created
+                        : UtcNow
+                });
+        }
+
+        protected override async Task WriteAsyncTask(IList<LogEventInfo> logEvents, CancellationToken cancellationToken)
+        {
+            CreateScopeIfNull();
+            await unitOfWork.Logs.InsertRangeAsync(
+                logEvents.Select(logEvent =>
                     new LogRecord
                     {
                         Message = Message.Render(logEvent),
@@ -54,31 +91,15 @@ namespace Pds.Api.AppStart.Logging
                         CreatedAt = TryParse(Time.Render(logEvent), out var created)
                             ? created
                             : UtcNow
-                    });
-        }
-
-        protected override async Task WriteAsyncTask(IList<LogEventInfo> logEvents, CancellationToken cancellationToken)
-        {
-            await unitOfWork.Logs.InsertRangeAsync(
-                    logEvents.Select(logEvent =>
-                        new LogRecord
-                        {
-                            Message = Message.Render(logEvent),
-                            Exception = Exception.Render(logEvent),
-                            CallSite = CallSite.Render(logEvent),
-                            Logger = Logger.Render(logEvent),
-                            Level = Level.Render(logEvent),
-                            CreatedAt = TryParse(Time.Render(logEvent), out var created)
-                                ? created
-                                : UtcNow
-                        }).ToList());
-
+                    }).ToList());
         }
 
         protected override void CloseTarget()
         {
             unitOfWork?.Dispose();
-            scope?.Dispose();
+            disposingScope?.Dispose();
+            disposingScope = null;
+            unitOfWork = null;
         }
     }
 }
